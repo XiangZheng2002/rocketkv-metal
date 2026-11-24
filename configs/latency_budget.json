@@ -1,0 +1,66 @@
+{
+  "_comment": "Decode latency of Stage 1+2 on Metal (E4) versus token budget 256-4096 at 32k, with Full KV (E0) interleaved in the same session: 2 RULER niah_single_2 prompts, 3 repeats, 128 tokens with --ignore-eos. Latency side of the budget sweep (experiment 4).",
+  "model": {
+    "path": "models/Llama-3.2-3B-Instruct-Q8_0.gguf",
+    "tokenizer": "models/Llama-3.2-3B-Instruct-tokenizer",
+    "runner": "./build/runner"
+  },
+  "latency": {
+    "task": "niah_single_2",
+    "lengths": [
+      32768
+    ],
+    "prompts": 2,
+    "repeats": 3,
+    "max_tokens": 128,
+    "configs": [
+      {
+        "name": "E0_full",
+        "mode": "off"
+      },
+      {
+        "name": "E4_b256",
+        "mode": "hsa",
+        "stage1_backend": "metal",
+        "stage2_backend": "metal",
+        "budget": 256
+      },
+      {
+        "name": "E4_b512",
+        "mode": "hsa",
+        "stage1_backend": "metal",
+        "stage2_backend": "metal",
+        "budget": 512
+      },
+      {
+        "name": "E4_b1024",
+        "mode": "hsa",
+        "stage1_backend": "metal",
+        "stage2_backend": "metal",
+        "budget": 1024
+      },
+      {
+        "name": "E4_b2048",
+        "mode": "hsa",
+        "stage1_backend": "metal",
+        "stage2_backend": "metal",
+        "budget": 2048
+      },
+      {
+        "name": "E4_b4096",
+        "mode": "hsa",
+        "stage1_backend": "metal",
+        "stage2_backend": "metal",
+        "budget": 4096
+      }
+    ]
+  },
+  "attention": {
+    "budget": 1024,
+    "window_size": 32,
+    "kernel_size": 63
+  },
+  "management": {
+    "data_dir": "data"
+  }
+}
