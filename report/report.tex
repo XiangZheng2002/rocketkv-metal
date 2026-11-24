@@ -121,7 +121,7 @@ Attribution showed that Stage~2 was bound by the serial latency of its stages, n
 \label{tab:opt}
 \begin{tabular}{llr}
 \toprule
-Step & Change & Time (ms) \\
+Step & Change & Kernel time (ms) \\
 \midrule
 F0 & Baseline: 9 kernels per layer, a barrier after each & 5.30 \\
 F1 & Split-K exact attention with online softmax; K/V shared within a GQA group & 4.04 \\
@@ -142,10 +142,10 @@ The Metal kernels reorder floating-point reductions, so we compare them against 
 
 Table~\ref{tab:configs} lists the configurations. E0--E4 separate the two stages and the two devices; E5 is the ablation of Section~\ref{sec:ablation}, which runs Stage~2 over the whole prompt without Stage~1 eviction. Unless stated otherwise the token budget is 1024.
 \begin{itemize}
-\item \textbf{Accuracy.} RULER (NVIDIA generator from the RocketKV repository): 5 tasks $\times$ 10 samples at each of 2K, 4K, 8K, 16K and 32K, plus 5 tasks $\times$ 3 samples at 64K and 128K (E0, E2, E4, E5). LongBench: 16 English tasks $\times$ first 20 samples, middle-truncated to 32K. Prompts and scoring follow the official RocketKV code.
+\item \textbf{Accuracy.} RULER (NVIDIA generator from the RocketKV repository): 5 tasks $\times$ 10 samples at each of 2K, 4K, 8K, 16K and 32K, plus 5 tasks $\times$ 10 samples at 64K and 3 at 128K (E0, E2, E4, E5). LongBench: 16 English tasks $\times$ first 20 samples, middle-truncated to 32K. Prompts and scoring follow the official RocketKV code.
 \item \textbf{Latency.} RULER prompts, 128 generated tokens (\code{--ignore-eos}), 2 prompts $\times$ 3 repeats per cell, configurations interleaved, one warm-up. 64K/128K: 3 runs per cell, CPU configurations skipped. E5 is timed against E4 in a separate interleaved session (1 prompt $\times$ 3 repeats per length).
 \end{itemize}
-The main benchmark comes from one run (commit \code{b012527}); the 64K/128K and E5 experiments from commits \code{d86d46b} and \code{9eab214}, which do not change E0--E4. Raw results are in \code{results/a106/bench/}.
+The main benchmark comes from one run (commit \code{b012527}); the 64K/128K and E5 experiments from commits \code{d86d46b} and \code{9eab214}, which do not change E0--E4; samples 4--10 at 64K were added later with the same runner binaries (\code{ruler\_64k\_extra*}). Raw results are in \code{results/a106/bench/}.
 
 \begin{table}[h]
 \centering\small
@@ -179,7 +179,9 @@ Table~\ref{tab:itl} and Figure~\ref{fig:itl} show the median inter-token latency
 \label{tab:itl}
 \begin{tabular}{lrrrrrrr}
 \toprule
-Config & 2K & 4K & 8K & 16K & 32K & 64K & 128K \\
+Config & \multicolumn{7}{c}{Decode latency (ms/token) at prompt length (tokens)} \\
+\cmidrule(l){2-8}
+ & 2K & 4K & 8K & 16K & 32K & 64K & 128K \\
 \midrule
 E0 Full KV & 5.11 & 5.33 & 5.82 & 6.70 & 9.09 & 13.29 & 21.89 \\
 E1 Stage 1 $\cdot$ CPU & 5.33 & 5.49 & 5.70 & 5.89 & 6.57 (1.38$\times$) & --- & --- \\
@@ -236,7 +238,9 @@ On the more realistic LongBench (Table~\ref{tab:longbench}), a 1024-token budget
 \label{tab:longbench}
 \begin{tabular}{lrrrrrrr}
 \toprule
-Config & Single-doc QA & Multi-doc QA & Summ. & Few-shot & Synthetic & Code & Mean \\
+Config & \multicolumn{7}{c}{LongBench accuracy (\%) by task category} \\
+\cmidrule(l){2-8}
+ & Single-doc QA & Multi-doc QA & Summ. & Few-shot & Synthetic & Code & Mean \\
 \midrule
 E0 Full KV & 42.9 & 33.7 & 27.6 & 69.9 & 45.0 & 53.5 & \best{44.9} \\
 E2 Stage 1 & 43.0 & 35.0 & 25.3 & 70.0 & 40.0 & 52.6 & 44.1 ($-0.8$) \\
@@ -251,7 +255,8 @@ E4 Stage 1+2 & 40.9 & 35.0 & 25.9 & 68.7 & 40.0 & 52.9 & 43.6 ($-1.3$) \\
 \label{tab:ruler}
 \begin{tabular}{llrrrrrr}
 \toprule
-Config & Budget & 2K & 4K & 8K & 16K & 32K & Mean \\
+Config & Budget & \multicolumn{6}{c}{RULER accuracy (\%) at prompt length (tokens)} \\
+ & (tokens) & 2K & 4K & 8K & 16K & 32K & Mean \\
 \midrule
 E0 Full KV & --- & 81.5 & 82.7 & 78.7 & 78.4 & 76.3 & \best{79.5} \\
 E2 Stage 1 & 1024 & 75.5 & 80.3 & 69.9 & 69.2 & 67.1 & 72.4 \\
@@ -278,7 +283,8 @@ The RULER loss is concentrated in one task (Figure~\ref{fig:per-task}): in \code
 \label{tab:sig}
 \begin{tabular}{llllll}
 \toprule
-Config & Budget & RULER all & RULER w/o multi-key & RULER multi-key & LongBench \\
+Config & Budget & \multicolumn{4}{c}{Accuracy difference to Full KV (points) [95\% CI]} \\
+ & (tokens) & RULER all & RULER w/o multi-key & RULER multi-key & LongBench \\
 \midrule
 E2 Stage 1 & 512 & $-8.4$ [$-11.2$, $-5.7$] & $-1.0$ [$-2.3$, $+0.2$] & $-38$ [$-50$, $-26$] & --- \\
 E2 Stage 1 & 1024 & $-7.1$ [$-9.7$, $-4.5$] & $-0.4$ [$-1.4$, $+0.7$] & $-34$ [$-46$, $-22$] & $-0.9$ [$-2.2$, $+0.2$] \\
@@ -301,20 +307,23 @@ Partly. Doubling the budget from 1024 to 2048 halves the multi-key loss ($-34$ t
 \end{figure}
 
 \paragraph{64K and 128K.}
-With only 3 samples per task, these numbers are a coarse check: one sample moves a task score by 33 points. Stage~1 and Stage~1+2 lose 4 points at 64K and 12--17 points at 128K, mostly in multi-key retrieval (Table~\ref{tab:long}); neither difference to Full KV is significant.
+At 64K we use 10 samples per task, at 128K only 3 (one sample moves a task score by 10 and 33 points). At 64K, Stage~1 and Stage~1+2 lose 11 and 13 points, and both losses are significant (Table~\ref{tab:long}). As at shorter lengths, most of the loss is multi-key retrieval (70 to 30); without \code{niah\_multikey\_2} the losses shrink to 4 and 6 points and their intervals contain 0. At 128K they lose 12 and 17 points; with 3 samples only the Stage~1+2 loss is significant. An earlier version of this report used 3 samples at 64K as well and reported a 4-point loss there; the 7 added samples show that this was optimistic.
 
 \begin{table}[h]
 \centering\small
-\caption{RULER accuracy (\%) at 64K and 128K, budget 1024, 5 tasks $\times$ 3 samples. $\Delta$: mean over both lengths vs Full KV, 95\% paired bootstrap CI. E5 is discussed in Section~\ref{sec:ablation}.}
+\caption{RULER accuracy (\%) at 64K and 128K, budget 1024, 5 tasks $\times$ 10 samples at 64K and $\times$ 3 at 128K. $\Delta$: points vs Full KV with 95\% paired bootstrap CI, at 64K and as the mean over both lengths. E5 is discussed in Section~\ref{sec:ablation}.}
 \label{tab:long}
-\begin{tabular}{lrrrl}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrll}
 \toprule
-Config & 64K & 128K & Mean & $\Delta$ vs Full KV \\
+Config & \multicolumn{3}{c}{RULER accuracy (\%)} & \multicolumn{2}{c}{$\Delta$ vs Full KV (points) [95\% CI]} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}
+ & 64K & 128K & Mean & 64K & Mean \\
 \midrule
-E0 Full KV & 69.3 & 67.1 & \best{68.2} & --- \\
-E2 Stage 1 & 64.9 & 54.7 & 59.8 & $-8.4$ [$-19.8$, $+2.9$] \\
-E4 Stage 1+2 & 65.8 & 49.8 & 57.8 & $-10.4$ [$-22.0$, $+0.7$] \\
-E5 Stage 2 only & 71.1 & 35.6 & 53.3 & $-14.9$ [$-26.0$, $-4.2$] \\
+E0 Full KV & 68.9 & \best{67.1} & \best{68.0} & --- & --- \\
+E2 Stage 1 & 58.0 & 54.7 & 56.3 & $-10.9$ [$-21.2$, $-1.3$] & $-11.7$ [$-21.2$, $-2.8$] \\
+E4 Stage 1+2 & 56.3 & 49.8 & 53.0 & $-12.7$ [$-23.5$, $-2.1$] & $-15.0$ [$-24.4$, $-5.5$] \\
+E5 Stage 2 only & \best{70.0} & 35.6 & 52.8 & $+1.1$ [$-7.7$, $+10.9$] & $-15.2$ [$-25.8$, $-5.4$] \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -336,7 +345,9 @@ Without eviction, E5 recovers almost all of the accuracy (Table~\ref{tab:ablatio
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{lrrrrrrrl}
 \toprule
-Config & 2K & 4K & 8K & 16K & 32K & Mean & Multi-key & $\Delta$ vs Full KV \\
+Config & \multicolumn{7}{c}{RULER accuracy (\%) at prompt length (tokens)} & $\Delta$ vs Full KV \\
+\cmidrule(lr){2-8}
+ & 2K & 4K & 8K & 16K & 32K & Mean & Multi-key & (points) [95\% CI] \\
 \midrule
 E0 Full KV & 81.5 & 82.7 & 78.7 & 78.4 & 76.3 & \best{79.5} & 96.0 & --- \\
 E4 Stage 1+2 & 75.1 & 78.0 & 69.9 & 67.6 & 69.2 & 71.9 & 62.0 & $-7.5$ [$-10.4$, $-4.5$] \\
@@ -346,12 +357,12 @@ E5 Stage 2 only & 81.5 & 80.4 & 75.2 & 77.9 & 76.9 & 78.4 & 98.0 & $-1.1$ [$-2.9
 \end{table}
 
 \paragraph{At 128K, Stage~2 alone breaks down.}
-E5 is the best configuration at 64K (71.1, Table~\ref{tab:long}) but drops to 35.6 at 128K, the only difference to Full KV that is significant at these lengths. At a compression ratio of 128, its chunks are 12 tokens long and it estimates scores from only 12 of 128 dimensions, too coarse to find the needle tokens (\code{fwe} 11 vs 56, \code{niah\_single\_2} 67 vs 100). Figure~\ref{fig:ruler-length} puts both experiments together: removing eviction helps up to 64K, while at 128K Stage~1 is needed to keep Stage~2's compression ratio moderate.
+E5 is the best configuration at 64K (70.0 against 68.9 for Full KV, Table~\ref{tab:long}), but drops to 35.6 at 128K ($-31.6$ points, [$-51.6$, $-14.7$]). At a compression ratio of 128, its chunks are 12 tokens long and it estimates scores from only 12 of 128 dimensions, too coarse to find the needle tokens (\code{fwe} 11 vs 56, \code{niah\_single\_2} 67 vs 100). Figure~\ref{fig:ruler-length} puts both experiments together: removing eviction helps up to 64K, while at 128K Stage~1 is needed to keep Stage~2's compression ratio moderate.
 
 \begin{figure}[h]
 \centering
 \includegraphics{figures/outputs/ruler-vs-length.pdf}
-\caption{\textbf{RULER accuracy versus prompt length with budget 1024, with and without Stage~1 eviction.} Each point is the mean over 5 tasks, with 10 samples per task up to 32K and 3 at 64K and 128K; the x axis is logarithmic. Without eviction, Stage~2 alone stays close to Full KV up to 32K (mean 78.4 vs 79.5, against 71.9 for Stage~1+2), but at 128K it falls to 35.6, below both Full KV (67.1) and Stage~1+2 (49.8).}
+\caption{\textbf{RULER accuracy versus prompt length with budget 1024, with and without Stage~1 eviction.} Each point is the mean over 5 tasks, with 10 samples per task up to 64K and 3 at 128K; the x axis is logarithmic. Without eviction, Stage~2 alone stays close to Full KV up to 32K (mean 78.4 vs 79.5, against 71.9 for Stage~1+2), but at 128K it falls to 35.6, below both Full KV (67.1) and Stage~1+2 (49.8).}
 \label{fig:ruler-length}
 \end{figure}
 
@@ -364,7 +375,9 @@ Without eviction, E5's per-step cost grows with the context, because its scoring
 \label{tab:ablation-latency}
 \begin{tabular}{lrrrrrrr}
 \toprule
-Config & 2K & 4K & 8K & 16K & 32K & 64K & 128K \\
+Config & \multicolumn{7}{c}{Decode latency (ms/token) at prompt length (tokens)} \\
+\cmidrule(l){2-8}
+ & 2K & 4K & 8K & 16K & 32K & 64K & 128K \\
 \midrule
 E0 Full KV & 5.11 & 5.33 & 5.82 & 6.70 & 9.09 & 13.29 & 21.89 \\
 E4 Stage 1+2 & 7.19 & 7.29 & 7.12 & 7.32 & 7.16 & 7.44 & \best{7.50} \\
@@ -381,7 +394,7 @@ The two stages are complementary. Stage~1 costs accuracy on multi-key retrieval 
 \section{Limitations}
 %==============================================================================
 \begin{itemize}
-\item \textbf{Sample sizes.} RULER uses 5 of 13 tasks with 10 samples each (3 at 64K/128K) and LongBench 20 per task, so per-task errors are several points.
+\item \textbf{Sample sizes.} RULER uses 5 of 13 tasks with 10 samples each (3 at 128K) and LongBench 20 per task, so per-task errors are several points.
 \item \textbf{Scope.} One 3B model on one machine; with larger models the weights dominate longer, which moves the crossover with Full KV (Section~\ref{sec:speed}).
 \item \textbf{Memory.} The KV-cache saving is logical only; process memory does not drop.
 \item \textbf{Integration.} Stage~2 requires three patches to a pinned \code{llama.cpp}.
@@ -392,6 +405,6 @@ The two stages are complementary. Stage~1 costs accuracy on multi-key retrieval 
 
 \paragraph{Q2: What does it cost?} The price is a 1.3-point drop on LongBench and a 7.6-point drop on RULER that comes almost entirely from multi-key retrieval; a larger budget buys part of it back.
 
-\paragraph{Q3: What does each stage contribute?} The loss is caused by Stage~1's eviction: Stage~2 alone matches Full KV up to 32K. At 128K Stage~1 is still worth its cost: it keeps Stage~2 accurate (49.8 vs 35.6 without it) and decode time flat (7.50 vs 11.98\,ms/token).
+\paragraph{Q3: What does each stage contribute?} The loss is caused by Stage~1's eviction: Stage~2 alone matches Full KV up to 64K. At 128K Stage~1 is still worth its cost: it keeps Stage~2 accurate (49.8 vs 35.6 without it) and decode time flat (7.50 vs 11.98\,ms/token).
 
 \end{document}

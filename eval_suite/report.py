@@ -9,6 +9,7 @@ Expected subdirectories (any may be missing; its tables are skipped):
   latency/       eval_suite.latency summary.json                                         (E0-E4)
   latency_long/  eval_suite.latency summary.json and runs/ with 1024-token generations
   ruler_128k/    RULER at 64k/128k: off, stage1_b1024, hsa_b1024 (3 samples per task)
+  ruler_64k_extra/, ruler_64k_extra_stage1/, ruler_64k_extra_stage2/   samples 4-10 at 64k (IDs shifted by 3)
   ruler_stage2/, ruler_128k_stage2/, latency_stage2/   ablation E5: Stage 2 alone, stage2_b1024
 Writes ROOT/report.md (and ROOT/figures/*.png when matplotlib is available) and prints the tables.
 """
@@ -178,12 +179,17 @@ def consistency_section(root):
                   rows), ""] if rows else []
 
 
-def merged_records(root, *names):
+def merged_records(root, *names, offsets=None):
+    """Union of several result directories, merged per sample. `offsets` maps a directory name to a number
+    added to its sample IDs, for directories that hold later samples of the same units (ruler_64k_extra*)."""
     out = {}
     for name in names:
         if (root / name).is_dir():
+            shift = (offsets or {}).get(name, 0)
             for run, units in records(root / name).items():
-                out.setdefault(run, {}).update(units)
+                for unit, samples in units.items():
+                    dst = out.setdefault(run, {}).setdefault(unit, {})
+                    dst.update({f"{int(k) + shift:03d}": r for k, r in samples.items()})
     return out
 
 
@@ -207,16 +213,44 @@ def ruler_compare(recs, base="off"):
     return header, rows
 
 
+LONG_CONTEXT_DIRS = ("ruler_128k", "ruler_128k_stage2",
+                     "ruler_64k_extra", "ruler_64k_extra_stage1", "ruler_64k_extra_stage2")
+# ruler_64k_extra* hold samples 4-10 of the 64k generation; samples 1-3 are in ruler_128k*.
+LONG_CONTEXT_OFFSETS = {"ruler_64k_extra": 3, "ruler_64k_extra_stage1": 3, "ruler_64k_extra_stage2": 3}
+
+
+def long_context_records(root):
+    return merged_records(root, *LONG_CONTEXT_DIRS, offsets=LONG_CONTEXT_OFFSETS)
+
+
+def samples_per_length(recs):
+    """{length: min samples per task over runs}."""
+    out = {}
+    for units in recs.values():
+        for unit, samples in units.items():
+            n = int(unit.split("/")[0])
+            out[n] = min(out.get(n, len(samples)), len(samples))
+    return out
+
+
 def long_context_section(root):
-    recs = merged_records(root, "ruler_128k", "ruler_128k_stage2")
+    recs = long_context_records(root)
     if not recs:
         return []
+    counts = samples_per_length(recs)
     header, rows = ruler_compare(recs)
-    n = max(len(s) for units in recs.values() for s in units.values())
-    return ["## RULER at 64k and 128k (budget 1024)", "",
-            f"{n} samples per task and length, so a single sample moves a task score by {100 / n:.0f} points; "
-            "per-task columns are means over both lengths. Δ: points vs Full KV with 95% paired bootstrap CI.", "",
-            table(header, rows), ""]
+    sizes = ", ".join(f"{c} at {n // 1024}k" for n, c in sorted(counts.items()))
+    out = ["## RULER at 64k and 128k (budget 1024)", "",
+           f"Samples per task: {sizes}. Per-task columns are means over both lengths. "
+           "Δ: points vs Full KV with 95% paired bootstrap CI.", "",
+           table(header, rows), ""]
+    for n, c in sorted(counts.items()):
+        if c > 3:
+            sub = {run: {u: s for u, s in units.items() if u.startswith(f"{n}/")} for run, units in recs.items()}
+            header, rows = ruler_compare(sub)
+            out += [f"RULER at {n // 1024}k only ({c} samples per task, so one sample moves a task score by "
+                    f"{100 / c:.0f} points):", "", table(header, rows), ""]
+    return out
 
 
 def ablation_section(root):
